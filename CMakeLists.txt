@@ -24,8 +24,10 @@ add_library(${PROJECT_NAME}
         src/SerialConnection.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PUBLIC permatracks_msg)
 target_link_libraries(${PROJECT_NAME} PUBLIC common)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${Boost_LIBRARIES})
 target_compile_definitions(${PROJECT_NAME} PUBLIC SERIALCONNECTION_USE_BOOST)
 
 # testing
