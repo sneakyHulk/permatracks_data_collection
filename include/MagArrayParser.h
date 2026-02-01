@@ -45,7 +45,7 @@ template <typename MagDataType, std::size_t start_index, std::size_t n_sensors>
 struct type_of<SENSOR_TYPE<MagDataType, start_index, n_sensors> > : std::type_identity<MagDataType> {};
 
 template <typename... SENSOR_TYPEs>
-requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MiMedMagnetometerArraySerialConnectionBinary : virtual protected SerialConnection {
+requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virtual protected SerialConnection {
    protected:
 	static constexpr std::size_t total_mag_sensors = (0 + ... + n_sensors_of<SENSOR_TYPEs>::value);
 	static constexpr int magnetic_flux_density_message_size = 1 + ((4 + n_sensors_of<SENSOR_TYPEs>::value * sizeof(typename type_of<SENSOR_TYPEs>::type)) + ...) + sizeof(std::uint64_t) + 2 + 1;
@@ -65,7 +65,7 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MiMedMagnetometerArra
 	std::uint64_t total_message_bytes_info_message = 0;
 	std::chrono::time_point<std::chrono::system_clock> last_message;
 #endif
-	MiMedMagnetometerArraySerialConnectionBinary() { std::cout << "MiMedMagnetometerArraySerialConnectionBinary(), Length is " << magnetic_flux_density_message_size << std::endl; }
+	MagArrayParser() { std::cout << "MiMedMagnetometerArraySerialConnectionBinary(), Length is " << magnetic_flux_density_message_size << std::endl; }
 
 	virtual void handle_parse_result(Message<Array<MagneticFluxDensityData, total_mag_sensors> > &magnetic_flux_density_message) = 0;
 
@@ -209,5 +209,5 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MiMedMagnetometerArra
 		index_info_message -= remove;
 	}
 
-	~MiMedMagnetometerArraySerialConnectionBinary() { std::cout << "~MiMedMagnetometerArraySerialConnectionBinary()" << std::endl; }
+	~MagArrayParser() { std::cout << "~MagArrayParser()" << std::endl; }
 };
