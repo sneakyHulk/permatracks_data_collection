@@ -1,0 +1,6 @@
+[submodule "external/msg"]
+	path = external/msg
+	url = https://github.com/sneakyHulk/permatracks_msg.git
+[submodule "external/common"]
+	path = external/common
+	url = https://github.com/sneakyHulk/common.git
