@@ -1,9 +1,15 @@
 #pragma once
 
+#include <AccelerationData.h>
+#include <AccelerationDataRaw.h>
 #include <Array.h>
+#include <GyroData.h>
+#include <GyroDataRaw.h>
 #include <MagneticFluxDensityData.h>
 #include <Message.h>
+#include <SerialConnection.h>
 #include <common_error.h>
+#include <common_output.h>
 
 #include <boost/crc.hpp>
 #include <cstring>
@@ -12,8 +18,6 @@
 #include <list>
 #include <memory>
 #include <ranges>
-
-#include "SerialConnection.h"
 
 // Primary template: defaults to false
 template <typename T>
@@ -50,6 +54,8 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	static constexpr std::size_t total_mag_sensors = (0 + ... + n_sensors_of<SENSOR_TYPEs>::value);
 	static constexpr int magnetic_flux_density_message_size = 1 + ((4 + n_sensors_of<SENSOR_TYPEs>::value * sizeof(typename type_of<SENSOR_TYPEs>::type)) + ...) + sizeof(std::uint64_t) + 2 + 1;
 	static constexpr int timestamp_message_size = 1 + 8 + 8 + 1 + 1;
+	static constexpr int accel_message_size = 1 + 4 + 2 + 2 + 2 + sizeof(std::uint64_t) + 1 + 1;
+	static constexpr int gyro_message_size = 1 + 4 + 2 + 2 + 2 + sizeof(std::uint64_t) + 1 + 1;
 	static constexpr int min_info_message_size = 1 + 0 + 1 + 1 + 1;
 	static constexpr int max_info_message_size = 1 + 255 + 1 + 1 + 1;
 	std::deque<std::uint8_t> buffer;
@@ -57,17 +63,23 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	int index_magnetic_flux_density_message = 0;
 	int index_timestamp_message = 0;
 	int index_info_message = 0;
+	int index_accel_message = 0;
+	int index_gyro_message = 0;
 
 #ifndef NDEBUG
 	std::uint64_t total_bytes_received = 0;
 	std::uint64_t total_message_bytes_timestamp_message = 0;
 	std::uint64_t total_message_bytes_magnetic_flux_density_message = 0;
 	std::uint64_t total_message_bytes_info_message = 0;
+	std::uint64_t total_message_bytes_accel_message = 0;
+	std::uint64_t total_message_bytes_gyro_message = 0;
 	std::chrono::time_point<std::chrono::system_clock> last_message;
 #endif
 	MagArrayParser() { std::cout << "MiMedMagnetometerArraySerialConnectionBinary(), Length is " << magnetic_flux_density_message_size << std::endl; }
 
 	virtual void handle_parse_result(Message<Array<MagneticFluxDensityData, total_mag_sensors> > &magnetic_flux_density_message) = 0;
+	virtual void handle_parse_result_accel(Message<AccelerationData> &accel_message) { std::cout << accel_message << std::endl; }
+	virtual void handle_parse_result_gyro(Message<GyroData> &gyro_message) { std::cout << gyro_message << std::endl; }
 
 	void parse_latest_timestamp_message(MessagePart const &message_part) {
 		for (int i = static_cast<int>(buffer.size()) - 1; i >= index_timestamp_message + timestamp_message_size - 1; --i) {
@@ -116,7 +128,7 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 					crc.process_byte(buffer[index_magnetic_flux_density_message + j]);
 				}
 
-				if (std::uint8_t crc0 = crc.checksum() & 0xFF, crc1 = (crc.checksum() >> 8) & 0xFF;
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF, crc1 = (crc.checksum() >> 8) & 0xFF;
 				    crc0 == buffer[index_magnetic_flux_density_message + magnetic_flux_density_message_size - 3] && crc1 == buffer[index_magnetic_flux_density_message + magnetic_flux_density_message_size - 2]) {
 					Message<Array<MagneticFluxDensityData, total_mag_sensors> > out;
 					out.src = "array";
@@ -149,6 +161,88 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 #ifndef NDEBUG
 					total_message_bytes_magnetic_flux_density_message += magnetic_flux_density_message_size;
 					std::cout << static_cast<double>(total_message_bytes_magnetic_flux_density_message) / static_cast<double>(total_bytes_received) << std::endl;
+					auto const now = std::chrono::system_clock::now();
+					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
+					last_message = now;
+#endif
+				}
+			}
+		}
+	}
+
+	void parse_accel_messages() {
+		for (; index_accel_message + accel_message_size <= static_cast<int>(buffer.size()); ++index_accel_message) {
+			if (buffer[index_accel_message] == 'A' && buffer[index_accel_message + accel_message_size - 1] == 'A') {
+				boost::crc_optimal<8, 0x07, 0x00, 0x00, false, false> crc;
+				for (auto j = 1; j <= accel_message_size - 3; ++j) {
+					crc.process_byte(buffer[index_accel_message + j]);
+				}
+
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF; crc0 == buffer[index_accel_message + accel_message_size - 2]) {
+					Message<AccelerationData> out;
+					out.src = "array";
+
+					auto const scale = std::bit_cast<float>(std::array{buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message]});
+
+					AccelerationDataRaw accel_data;
+					for (unsigned char &byte : accel_data.bytes) {
+						byte = buffer[++index_accel_message];
+					}
+
+					out.ax = static_cast<float>(accel_data.ax) * scale;
+					out.ay = static_cast<float>(accel_data.ay) * scale;
+					out.az = static_cast<float>(accel_data.az) * scale;
+
+					out.timestamp = std::bit_cast<std::uint64_t>(std::array{buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message],
+					    buffer[++index_accel_message], buffer[++index_accel_message], buffer[++index_accel_message]});
+					out.timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
+					index_accel_message += 2;
+					handle_parse_result_accel(out);
+#ifndef NDEBUG
+					total_message_bytes_accel_message += accel_message_size;
+					std::cout << static_cast<double>(total_message_bytes_accel_message) / static_cast<double>(total_bytes_received) << std::endl;
+					auto const now = std::chrono::system_clock::now();
+					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
+					last_message = now;
+#endif
+				}
+			}
+		}
+	}
+
+	void parse_gyro_messages() {
+		for (; index_gyro_message + gyro_message_size <= static_cast<int>(buffer.size()); ++index_gyro_message) {
+			if (buffer[index_gyro_message] == 'G' && buffer[index_gyro_message + gyro_message_size - 1] == 'G') {
+				boost::crc_optimal<8, 0x07, 0x00, 0x00, false, false> crc;
+				for (auto j = 1; j <= gyro_message_size - 3; ++j) {
+					crc.process_byte(buffer[index_gyro_message + j]);
+				}
+
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF; crc0 == buffer[index_gyro_message + gyro_message_size - 2]) {
+					Message<GyroData> out;
+					out.src = "array";
+
+					auto const scale = std::bit_cast<float>(std::array{buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message]});
+
+					GyroDataRaw gyro_data;
+					for (unsigned char &byte : gyro_data.bytes) {
+						byte = buffer[++index_gyro_message];
+					}
+
+					out.gx = static_cast<float>(gyro_data.gx) * scale;
+					out.gy = static_cast<float>(gyro_data.gy) * scale;
+					out.gz = static_cast<float>(gyro_data.gz) * scale;
+
+					out.timestamp = std::bit_cast<std::uint64_t>(std::array{buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message],
+					    buffer[++index_gyro_message], buffer[++index_gyro_message], buffer[++index_gyro_message]});
+					out.timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
+					index_gyro_message += 2;
+					handle_parse_result_gyro(out);
+#ifndef NDEBUG
+					total_message_bytes_gyro_message += gyro_message_size;
+					std::cout << static_cast<double>(total_message_bytes_gyro_message) / static_cast<double>(total_bytes_received) << std::endl;
 					auto const now = std::chrono::system_clock::now();
 					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
 					last_message = now;
@@ -192,20 +286,25 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	void parse(MessagePart const &message_part) {
 #ifndef NDEBUG
 		total_bytes_received += message_part.data.size();
+		// std::cout.write(message_part.data.data(), message_part.data.size());
 #endif
 
 		buffer.append_range(message_part.data);
 
 		parse_latest_timestamp_message(message_part);
 		parse_magnetic_flux_density_messages();
+		parse_accel_messages();
+		parse_gyro_messages();
 		parse_info_messages();
 
-		auto const remove = std::min({index_timestamp_message, index_magnetic_flux_density_message, index_info_message});
+		auto const remove = std::min({index_timestamp_message, index_magnetic_flux_density_message, index_accel_message, index_gyro_message, index_info_message});
 
 		buffer.erase(buffer.begin(), buffer.begin() + remove);
 
 		index_timestamp_message -= remove;
 		index_magnetic_flux_density_message -= remove;
+		index_accel_message -= remove;
+		index_gyro_message -= remove;
 		index_info_message -= remove;
 	}
 
