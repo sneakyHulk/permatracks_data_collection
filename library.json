@@ -1,0 +1,19 @@
+{
+  "name": "data_collection",
+  "version": "1.0.0",
+  "build": {
+    "srcDir": ".",
+    "srcFilter": [
+      "+<src/MagArrayParser.cpp>",
+      "+<src/SerialConnection.cpp>",
+      "+<external/common/src/*.cpp>",
+      "+<external/msg/src/*.cpp>"
+    ],
+    "includeDir": ".",
+    "flags": [
+      "-I include",
+      "-I external/common/include",
+      "-I external/msg/include"
+    ]
+  }
+}
