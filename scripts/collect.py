@@ -76,6 +76,9 @@ def collect_position_direction_vector_values(filepaths, skip=1):
 
 if __name__ == '__main__':
     filepaths = ["../data/mag_data_1758205094942749000_2025Sep18_16h18min14s_earth_magnetic_field_calibration.csv"]
+    data = collect(filepaths, 0) # 4999, 41, 3
+    print(data)
 
-    data = collect(filepaths, 0)  # 4999, 41, 3
+    filepaths = ["../data/result_6_6_6_3_150_correct_coordinate_system_corrected.csv"]
+    data = collect_position_direction_vector_values(filepaths, skip=0)
     print(data)
