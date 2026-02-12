@@ -16,6 +16,11 @@ FetchContent_MakeAvailable(common)
 add_library(common_${PROJECT_NAME} ALIAS common)
 set_target_properties(common PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
+FetchContent_Declare(csv SOURCE_DIR ${PROJECT_SOURCE_DIR}/thirdparty/csv)
+FetchContent_MakeAvailable(csv)
+add_library(csv_${PROJECT_NAME} ALIAS csv)
+set_target_properties(csv PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 ### Boost
 find_package(Boost CONFIG REQUIRED)
 
@@ -29,6 +34,14 @@ target_link_libraries(${PROJECT_NAME} PUBLIC permatracks_msg)
 target_link_libraries(${PROJECT_NAME} PUBLIC common)
 target_link_libraries(${PROJECT_NAME} PUBLIC ${Boost_LIBRARIES})
 target_compile_definitions(${PROJECT_NAME} PUBLIC SERIALCONNECTION_USE_BOOST)
+
+add_library(${PROJECT_NAME}_file
+        src/MagArrayMagneticFluxDensityDataFileReader.cpp
+        src/MagArrayMagneticFluxDensityDataFileWriter.cpp
+)
+target_include_directories(${PROJECT_NAME}_file PUBLIC ${Boost_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME}_file PUBLIC csv)
+target_link_libraries(${PROJECT_NAME}_file PUBLIC permatracks_msg)
 
 # testing
 add_executable(test_${PROJECT_NAME}

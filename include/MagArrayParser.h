@@ -3,10 +3,13 @@
 #include <AccelerationData.h>
 #include <AccelerationDataRaw.h>
 #include <Array.h>
+#include <GravityVector.h>
+#include <GyroBiasVector.h>
 #include <GyroData.h>
 #include <GyroDataRaw.h>
 #include <MagneticFluxDensityData.h>
 #include <Message.h>
+#include <RotationQuaternion.h>
 #include <SerialConnection.h>
 #include <common_error.h>
 #include <common_output.h>
@@ -56,6 +59,9 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	static constexpr int timestamp_message_size = 1 + 8 + 8 + 1 + 1;
 	static constexpr int accel_message_size = 1 + 4 + 2 + 2 + 2 + sizeof(std::uint64_t) + 1 + 1;
 	static constexpr int gyro_message_size = 1 + 4 + 2 + 2 + 2 + sizeof(std::uint64_t) + 1 + 1;
+	static constexpr int quaternion_message_size = 1 + 4 + 4 + 4 + 4 + 1 + 1;
+	static constexpr int gravity_message_size = 1 + 4 + 4 + 4 + 1 + 1;
+	static constexpr int gyro_bias_message_size = 1 + 4 + 4 + 4 + 1 + 1;
 	static constexpr int min_info_message_size = 1 + 0 + 1 + 1 + 1;
 	static constexpr int max_info_message_size = 1 + 255 + 1 + 1 + 1;
 	std::deque<std::uint8_t> buffer;
@@ -65,6 +71,9 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	int index_info_message = 0;
 	int index_accel_message = 0;
 	int index_gyro_message = 0;
+	int index_quaternion_message = 0;
+	int index_gravity_message = 0;
+	int index_gyro_bias_message = 0;
 
 #ifndef NDEBUG
 	std::uint64_t total_bytes_received = 0;
@@ -73,6 +82,9 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	std::uint64_t total_message_bytes_info_message = 0;
 	std::uint64_t total_message_bytes_accel_message = 0;
 	std::uint64_t total_message_bytes_gyro_message = 0;
+	std::uint64_t total_message_bytes_quaternion_message = 0;
+	std::uint64_t total_message_bytes_gravity_message = 0;
+	std::uint64_t total_message_bytes_gyro_bias_message = 0;
 	std::chrono::time_point<std::chrono::system_clock> last_message;
 #endif
 	MagArrayParser() { std::cout << "MiMedMagnetometerArraySerialConnectionBinary(), Length is " << magnetic_flux_density_message_size << std::endl; }
@@ -80,6 +92,9 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 	virtual void handle_parse_result(Message<Array<MagneticFluxDensityData, total_mag_sensors> > &magnetic_flux_density_message) = 0;
 	virtual void handle_parse_result_accel(Message<AccelerationData> &accel_message) { std::cout << accel_message << std::endl; }
 	virtual void handle_parse_result_gyro(Message<GyroData> &gyro_message) { std::cout << gyro_message << std::endl; }
+	virtual void handle_parse_result_quaternion(Message<RotationQuaternion> &quaternion_message) { std::cout << quaternion_message << std::endl; }
+	virtual void handle_parse_result_gravity(Message<GravityVector> &gravity_message) { std::cout << gravity_message << std::endl; }
+	virtual void handle_parse_result_gyro_bias(Message<GyroBiasVector> &gyro_bias_message) { std::cout << gyro_bias_message << std::endl; }
 
 	void parse_latest_timestamp_message(MessagePart const &message_part) {
 		for (int i = static_cast<int>(buffer.size()) - 1; i >= index_timestamp_message + timestamp_message_size - 1; --i) {
@@ -252,6 +267,96 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 		}
 	}
 
+	void parse_quaternion_messages() {
+		for (; index_quaternion_message + quaternion_message_size <= static_cast<int>(buffer.size()); ++index_quaternion_message) {
+			if (buffer[index_quaternion_message] == 'R' && buffer[index_quaternion_message + quaternion_message_size - 1] == 'R') {
+				boost::crc_optimal<8, 0x07, 0x00, 0x00, false, false> crc;
+				for (auto j = 1; j <= quaternion_message_size - 3; ++j) {
+					crc.process_byte(buffer[index_quaternion_message + j]);
+				}
+
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF; crc0 == buffer[index_quaternion_message + quaternion_message_size - 2]) {
+					Message<RotationQuaternion> out;
+					out.src = "array";
+
+					for (unsigned char &byte : out.bytes) {
+						byte = buffer[++index_quaternion_message];
+					}
+
+					index_quaternion_message += 2;
+					handle_parse_result_quaternion(out);
+#ifndef NDEBUG
+					total_message_bytes_quaternion_message += quaternion_message_size;
+					std::cout << static_cast<double>(total_message_bytes_quaternion_message) / static_cast<double>(total_bytes_received) << std::endl;
+					auto const now = std::chrono::system_clock::now();
+					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
+					last_message = now;
+#endif
+				}
+			}
+		}
+	}
+
+	void parse_gravity_messages() {
+		for (; index_gravity_message + gravity_message_size <= static_cast<int>(buffer.size()); ++index_gravity_message) {
+			if (buffer[index_gravity_message] == 'V' && buffer[index_gravity_message + gravity_message_size - 1] == 'V') {
+				boost::crc_optimal<8, 0x07, 0x00, 0x00, false, false> crc;
+				for (auto j = 1; j <= gravity_message_size - 3; ++j) {
+					crc.process_byte(buffer[index_gravity_message + j]);
+				}
+
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF; crc0 == buffer[index_gravity_message + gravity_message_size - 2]) {
+					Message<GravityVector> out;
+					out.src = "array";
+
+					for (unsigned char &byte : out.bytes) {
+						byte = buffer[++index_gravity_message];
+					}
+
+					index_gravity_message += 2;
+					handle_parse_result_gravity(out);
+#ifndef NDEBUG
+					total_message_bytes_gravity_message += gravity_message_size;
+					std::cout << static_cast<double>(total_message_bytes_gravity_message) / static_cast<double>(total_bytes_received) << std::endl;
+					auto const now = std::chrono::system_clock::now();
+					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
+					last_message = now;
+#endif
+				}
+			}
+		}
+	}
+
+	void parse_gyro_bias_messages() {
+		for (; index_gyro_bias_message + gyro_bias_message_size <= static_cast<int>(buffer.size()); ++index_gyro_bias_message) {
+			if (buffer[index_gyro_bias_message] == 'B' && buffer[index_gyro_bias_message + gyro_bias_message_size - 1] == 'B') {
+				boost::crc_optimal<8, 0x07, 0x00, 0x00, false, false> crc;
+				for (auto j = 1; j <= gyro_bias_message_size - 3; ++j) {
+					crc.process_byte(buffer[index_gyro_bias_message + j]);
+				}
+
+				if (std::uint8_t const crc0 = crc.checksum() & 0xFF; crc0 == buffer[index_gyro_bias_message + gyro_bias_message_size - 2]) {
+					Message<GyroBiasVector> out;
+					out.src = "array";
+
+					for (unsigned char &byte : out.bytes) {
+						byte = buffer[++index_gyro_bias_message];
+					}
+
+					index_gyro_bias_message += 2;
+					handle_parse_result_gyro_bias(out);
+#ifndef NDEBUG
+					total_message_bytes_gyro_bias_message += gyro_bias_message_size;
+					std::cout << static_cast<double>(total_message_bytes_gyro_bias_message) / static_cast<double>(total_bytes_received) << std::endl;
+					auto const now = std::chrono::system_clock::now();
+					std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(now - last_message).count() << " ms" << std::endl << std::endl;
+					last_message = now;
+#endif
+				}
+			}
+		}
+	}
+
 	void parse_info_messages() {
 		int i = index_info_message + min_info_message_size - 1;
 		for (; i < static_cast<int>(buffer.size()); ++i) {
@@ -296,8 +401,11 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 		parse_accel_messages();
 		parse_gyro_messages();
 		parse_info_messages();
+		parse_quaternion_messages();
+		parse_gravity_messages();
+		parse_gyro_bias_messages();
 
-		auto const remove = std::min({index_timestamp_message, index_magnetic_flux_density_message, index_accel_message, index_gyro_message, index_info_message});
+		auto const remove = std::min({index_timestamp_message, index_magnetic_flux_density_message, index_accel_message, index_gyro_message, index_quaternion_message, index_gravity_message, index_gyro_bias_message, index_info_message});
 
 		buffer.erase(buffer.begin(), buffer.begin() + remove);
 
@@ -306,6 +414,9 @@ requires(is_SENSOR_TYPE<SENSOR_TYPEs>::value && ...) class MagArrayParser : virt
 		index_accel_message -= remove;
 		index_gyro_message -= remove;
 		index_info_message -= remove;
+		index_quaternion_message -= remove;
+		index_gravity_message -= remove;
+		index_gyro_bias_message -= remove;
 	}
 
 	~MagArrayParser() { std::cout << "~MagArrayParser()" << std::endl; }

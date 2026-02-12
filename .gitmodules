@@ -4,3 +4,6 @@
 [submodule "external/common"]
 	path = external/common
 	url = https://github.com/sneakyHulk/common.git
+[submodule "thirdparty/csv"]
+	path = thirdparty/csv
+	url = https://github.com/vincentlaucsb/csv-parser.git
