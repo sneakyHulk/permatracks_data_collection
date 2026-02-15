@@ -29,8 +29,9 @@ class MagArrayMagneticFluxDensityDataFileReader {
 		if (++it != reader.end()) {
 			auto row = *it;
 
-			for (auto const& [i, out] : std::ranges::views::enumerate(ret)) {
+			for (auto i = 0; auto const& out : ret) {
 				out = {row[common::stringprint('x', i)].template get<double>(), row[common::stringprint('y', i)].template get<double>(), row[common::stringprint('z', i)].template get<double>()};
+				++i;
 			}
 
 			ret.src = name;
@@ -61,9 +62,10 @@ class MagArrayPositionDirectionVectorDataFileReader {
 		if (++it != reader.end()) {
 			auto row = *it;
 
-			for (auto const& [i, out] : std::ranges::views::enumerate(ret)) {
+			for (auto i = 0; auto const& out : ret) {
 				out = {row[common::stringprint("mag_x", i)].template get<double>(), row[common::stringprint("mag_y", i)].template get<double>(), row[common::stringprint("mag_z", i)].template get<double>(),
 				    row[common::stringprint("mag_mx", i)].template get<double>(), row[common::stringprint("mag_my", i)].template get<double>(), row[common::stringprint("mag_mz", i)].template get<double>()};
+				++i;
 			}
 
 			ret.src = name;
